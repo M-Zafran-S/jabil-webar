@@ -36,7 +36,7 @@
       bottom: 20px;
       left: 20px;
       right: 20px;
-      max-height: 220px;
+      max-height: 200px;
       background: rgba(0, 0, 0, 0.85);
       color: #00ffcc;
       font-family: monospace;
@@ -45,7 +45,7 @@
       border-radius: 8px;
       z-index: 9999;
       overflow-y: auto;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
       border: 1px solid #00ffcc;
       pointer-events: none;
     }
@@ -55,6 +55,7 @@
       white-space: pre-wrap;
       word-break: break-all;
     }
+
     .log-success { color: #00ff00; }
     .log-warn { color: #ffff00; }
     .log-error { color: #ff3333; }
@@ -63,15 +64,17 @@
 
 <body>
 
-  <!-- Fixed UI Logo -->
-  <img id="logoOverlay" src="./assets/logo.png">
+  <!-- UI Logo -->
+  <img id="logoOverlay" src="./assets/logo.png" alt="Logo">
 
-  <!-- On-Screen Debug Log Screen -->
+  <!-- On-Screen Debug HUD Log -->
   <div id="debugHUD">
     <div class="log-line log-warn">[SYSTEM INITIALIZING...]</div>
   </div>
 
+  <!-- Scene with Draco Decoder Path included at root level -->
   <a-scene
+    gltf-model="dracoDecoderPath: https://www.gstatic.com/draco/v1/decoders/;"
     mindar-image="
       imageTargetSrc: ./assets/tracking-files/targets.mind;
       filterMinCF: 0.001;
@@ -86,6 +89,7 @@
       <a-asset-item id="plant1" src="./assets/models/jabil-plant-1.glb"></a-asset-item>
     </a-assets>
 
+    <!-- Scene Lighting -->
     <a-light type="ambient" intensity="1.5"></a-light>
     <a-light type="directional" position="1 2 3" intensity="1.5"></a-light>
 
@@ -95,13 +99,13 @@
       camera="near: 0.01; far: 10000;">
     </a-camera>
 
-    <!-- TARGET 0 -->
+    <!-- Target 0 Container -->
     <a-entity id="target0" mindar-image-target="targetIndex: 0">
+      <!-- Wrapper scaled down for ~30m Blender dimensions -->
       <a-entity id="wrapper0" position="0 0 0" rotation="0 0 0" scale="0.005 0.005 0.005">
         <a-gltf-model
           id="model-0"
           src="#plant1"
-          gltf-model="dracoDecoderPath: https://www.gstatic.com/draco/v1/decoders/;"
           position="0 0 0"
           rotation="0 0 0">
         </a-gltf-model>
@@ -111,7 +115,7 @@
   </a-scene>
 
 <script>
-// Logger function to print directly onto screen HUD
+// Print logs directly onto the HUD overlay
 function logToHUD(msg, type = 'info') {
   const hud = document.getElementById("debugHUD");
   if (!hud) return;
@@ -152,15 +156,15 @@ function logToHUD(msg, type = 'info') {
     modelEl = document.getElementById("model-0");
     const assetEl = document.getElementById("plant1");
 
-    // 1. Check if model DOM element exists
+    // 1. Verify model DOM element exists
     if (assetEl) {
-      logToHUD(`Asset DOM node detected: #${assetEl.id}`, 'info');
-      logToHUD(`Target URL: ${assetEl.getAttribute('src')}`, 'info');
+      logToHUD(`Asset node initialized: #${assetEl.id}`, 'info');
+      logToHUD(`Source path: ${assetEl.getAttribute('src')}`, 'info');
     } else {
-      logToHUD(`ERROR: #plant1 asset node missing!`, 'error');
+      logToHUD(`ERROR: #plant1 asset element not found in DOM!`, 'error');
     }
 
-    // 2. XMLHttpRequest to monitor frame-by-frame download progress
+    // 2. Track download progress frame-by-frame via XHR
     if (assetEl) {
       const modelUrl = assetEl.getAttribute('src');
       const xhr = new XMLHttpRequest();
@@ -172,7 +176,7 @@ function logToHUD(msg, type = 'info') {
           const percent = Math.round((event.loaded / event.total) * 100);
           const loadedMB = (event.loaded / (1024 * 1024)).toFixed(2);
           const totalMB = (event.total / (1024 * 1024)).toFixed(2);
-          logToHUD(`Downloading GLB: ${percent}% (${loadedMB} MB / ${totalMB} MB)`, 'warn');
+          logToHUD(`Downloading GLB: ${percent}% (${loadedMB}/${totalMB} MB)`, 'warn');
         } else {
           logToHUD(`Downloading GLB: ${(event.loaded / (1024 * 1024)).toFixed(2)} MB loaded...`, 'warn');
         }
@@ -180,52 +184,52 @@ function logToHUD(msg, type = 'info') {
 
       xhr.onload = () => {
         if (xhr.status === 200) {
-          logToHUD(`GLB File successfully retrieved (HTTP 200)!`, 'success');
+          logToHUD(`GLB File successfully retrieved (HTTP 200)`, 'success');
         } else {
-          logToHUD(`HTTP Error ${xhr.status}: Could not find file at ${modelUrl}`, 'error');
+          logToHUD(`HTTP ${xhr.status}: Failed to retrieve file at ${modelUrl}`, 'error');
         }
       };
 
       xhr.onerror = () => {
-        logToHUD(`Network Error: Failed to fetch ${modelUrl}`, 'error');
+        logToHUD(`Network Error: Could not reach ${modelUrl}`, 'error');
       };
 
       xhr.send();
     }
 
-    // 3. Monitor A-Frame GLTF parsing status
+    // 3. Monitor A-Frame parsing events
     if (modelEl) {
-      modelEl.addEventListener("model-loaded", (e) => {
-        logToHUD(`A-FRAME: GLTF Model fully parsed & rendered!`, 'success');
+      modelEl.addEventListener("model-loaded", () => {
+        logToHUD(`A-FRAME: GLTF Model fully decompressed & parsed!`, 'success');
         
-        // Calculate Bounding Box dimensions in meters
+        // Output real dimensions in meters
         const box = new THREE.Box3().setFromObject(modelEl.object3D);
         const size = new THREE.Vector3();
         box.getSize(size);
-        logToHUD(`Model Dimensions: W:${size.x.toFixed(2)}m H:${size.y.toFixed(2)}m D:${size.z.toFixed(2)}m`, 'info');
+        logToHUD(`Model Dimensions: ${size.x.toFixed(1)}m x ${size.y.toFixed(1)}m x ${size.z.toFixed(1)}m`, 'info');
       });
 
       modelEl.addEventListener("model-error", (e) => {
-        logToHUD(`A-FRAME ERROR: GLTF failed to parse! Detail: ${JSON.stringify(e.detail)}`, 'error');
+        logToHUD(`A-FRAME ERROR: Parse failure. Check Draco path or file encoding.`, 'error');
       });
     }
 
-    // 4. Monitor MindAR tracking status
+    // 4. Track image target status
     if (target) {
       target.addEventListener("targetFound", () => {
-        logToHUD(`TRACKING: Image Target Found!`, 'success');
+        logToHUD(`TRACKING: Image Target Recognized!`, 'success');
         isTracking = true;
       });
 
       target.addEventListener("targetLost", () => {
-        logToHUD(`TRACKING: Target Lost!`, 'warn');
+        logToHUD(`TRACKING: Target Lost`, 'warn');
         isTracking = false;
         isDragging = false;
       });
     }
   });
 
-  // Touch controls
+  // Touch Controls: Rotate (1-finger) and Scale (2-finger pinch)
   window.addEventListener("touchstart", (e) => {
     if (!isTracking || !wrapper) return;
 
