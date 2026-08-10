@@ -85,19 +85,6 @@
     window.addEventListener('unhandledrejection', (e) => {
       logToHUD(`PROMISE REJECTION: ${e.reason}`, 'error');
     });
-
-    // Initialize Meshopt WASM module before A-Frame attempts parsing
-    if (window.MeshoptDecoder) {
-      MeshoptDecoder.ready.then(() => {
-        const THREE_REF = window.AFRAME ? window.AFRAME.THREE : window.THREE;
-        if (THREE_REF && THREE_REF.GLTFLoader) {
-          THREE_REF.GLTFLoader.prototype.MeshoptDecoder = MeshoptDecoder;
-          console.log("MeshoptDecoder WASM initialized successfully.");
-        }
-      }).catch((err) => {
-        console.error("Failed to initialize MeshoptDecoder:", err);
-      });
-    }
   </script>
 </head>
 
@@ -140,13 +127,12 @@
     <a-entity id="target0" mindar-image-target="targetIndex: 0">
       <a-entity id="wrapper0" position="0 0 0" rotation="0 0 0" scale="0.005 0.005 0.005">
         
-        <!-- Standard Entity using gltf-model component -->
-        <a-entity
+        <!-- Standard gltf-model element without initial src attribute -->
+        <a-gltf-model
           id="model-0"
-          gltf-model="src: #plant1;"
           position="0 0 0"
           rotation="0 0 0">
-        </a-entity>
+        </a-gltf-model>
 
       </a-entity>
     </a-entity>
@@ -191,15 +177,23 @@
       logToHUD(`ERROR: #plant1 asset node missing!`, 'error');
     }
 
-    // Ensure Meshopt is attached to AFRAME.THREE.GLTFLoader
-    if (window.MeshoptDecoder && window.AFRAME) {
+    // 2. Initialize Meshopt WASM and only assign model source when ready
+    if (window.MeshoptDecoder) {
+      logToHUD(`Compiling Meshopt WebAssembly...`, 'warn');
       MeshoptDecoder.ready.then(() => {
         AFRAME.THREE.GLTFLoader.prototype.MeshoptDecoder = MeshoptDecoder;
         logToHUD(`Meshopt WebAssembly Decoder Ready!`, 'success');
+
+        // Assign model source AFTER Meshopt is attached to Three.js
+        modelEl.setAttribute("src", "#plant1");
+      }).catch((err) => {
+        logToHUD(`Meshopt Init Failed: ${err}`, 'error');
       });
+    } else {
+      modelEl.setAttribute("src", "#plant1");
     }
 
-    // 2. Track download progress frame-by-frame
+    // 3. Track download progress frame-by-frame
     if (assetEl) {
       const modelUrl = assetEl.getAttribute('src');
       const xhr = new XMLHttpRequest();
@@ -232,7 +226,7 @@
       xhr.send();
     }
 
-    // 3. Monitor A-Frame GLTF parsing status
+    // 4. Monitor A-Frame GLTF parsing status
     if (modelEl) {
       modelEl.addEventListener("model-loaded", () => {
         logToHUD(`A-FRAME: GLTF Model fully decompressed & rendered!`, 'success');
@@ -250,7 +244,7 @@
       });
     }
 
-    // 4. Monitor MindAR tracking status
+    // 5. Monitor MindAR tracking status
     if (target) {
       target.addEventListener("targetFound", () => {
         logToHUD(`TRACKING: Image Target Found!`, 'success');
