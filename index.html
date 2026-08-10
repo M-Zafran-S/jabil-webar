@@ -6,9 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Jabil WebAR</title>
 
-  <!-- Stable WebAR and Rendering Libraries -->
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+  <!-- 1. A-Frame Library (Must Load First) -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  
+  <!-- 2. MindAR Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
@@ -42,10 +44,7 @@
       filterBeta: 1000;
     "
     color-space="sRGB"
-    renderer="
-      colorManagement: true;
-      physicallyCorrectLights: true;
-    "
+    renderer="colorManagement: true; physicallyCorrectLights: true;"
     vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false">
 
@@ -59,14 +58,22 @@
       camera="near: 0.01; far: 10000;">
     </a-camera>
 
+    <!-- TARGET 0 -->
     <a-entity id="target0" mindar-image-target="targetIndex: 0">
-      <a-gltf-model
-        id="model-0"
-        src="#plant1"
-        rotation="0 0 0"
-        position="0 0 0.1"
-        scale="1 1 1">
-      </a-gltf-model>
+      
+      <!-- Diagnostic Object: Helps verify camera tracking -->
+      <a-box id="debugBox" position="0 0 0.1" scale="0.2 0.2 0.2" color="red"></a-box>
+
+      <!-- Model Wrapper (Scale updated to 1 1 1) -->
+      <a-entity id="wrapper0" position="0 0 0.1" rotation="0 0 0" scale="1 1 1">
+        <a-gltf-model
+          id="model-0"
+          src="#plant1"
+          position="0 0 0"
+          rotation="0 0 0">
+        </a-gltf-model>
+      </a-entity>
+
     </a-entity>
 
   </a-scene>
@@ -78,15 +85,14 @@
   let previousTouchX = 0;
 
   let initialPinchDistance = 0;
-  let initialScale = 0.1;
+  let initialScale = 1.0;
 
-  // Rotation speed converted for direct Three.js radian calculation
   const rotationSpeed = 0.005; 
-  const scaleSpeed = 0.001;
-  const scaleMin = 0.01;
-  const scaleMax = 2.0;
+  const scaleSpeed = 0.005;
+  const scaleMin = 0.1;
+  const scaleMax = 5.0;
 
-  let model = null;
+  let wrapper = null;
   let target = null;
 
   function getPinchDistance(touch1, touch2) {
@@ -95,8 +101,8 @@
     return Math.sqrt(dx * dx + dy * dy);
   }
 
-  window.addEventListener("load", () => {
-    model = document.getElementById("model-0");
+  document.addEventListener("DOMContentLoaded", () => {
+    wrapper = document.getElementById("wrapper0");
     target = document.getElementById("target0");
 
     if (target) {
@@ -112,20 +118,20 @@
   });
 
   window.addEventListener("touchstart", (e) => {
-    if (!isTracking || !model) return;
+    if (!isTracking || !wrapper) return;
 
     if (e.touches.length === 1) {
       isDragging = true;
       previousTouchX = e.touches[0].clientX;
     } else if (e.touches.length === 2) {
-      isDragging = false; // Freeze rotation during pinch
+      isDragging = false;
       initialPinchDistance = getPinchDistance(e.touches[0], e.touches[1]);
-      initialScale = model.object3D.scale.x;
+      initialScale = wrapper.object3D.scale.x;
     }
   });
 
   window.addEventListener("touchmove", (e) => {
-    if (!isTracking || !model) return;
+    if (!isTracking || !wrapper) return;
     e.preventDefault();
 
     // 1-Finger Horizontal Rotation
@@ -134,8 +140,7 @@
       const deltaX = currentTouchX - previousTouchX;
       previousTouchX = currentTouchX;
 
-      // Direct Three.js rotation for 60fps performance
-      model.object3D.rotation.y += deltaX * rotationSpeed;
+      wrapper.object3D.rotation.y += deltaX * rotationSpeed;
     }
     // 2-Finger Pinch Scaling
     else if (e.touches.length === 2) {
@@ -145,8 +150,7 @@
       let newScale = initialScale + (deltaDistance * scaleSpeed);
       newScale = Math.max(scaleMin, Math.min(newScale, scaleMax));
 
-      // Direct Three.js scale modification
-      model.object3D.scale.set(newScale, newScale, newScale);
+      wrapper.object3D.scale.set(newScale, newScale, newScale);
     }
   }, { passive: false });
 
