@@ -13,7 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
-  <!-- 3. Meshopt Decoder CDN (Ensures Meshopt-compressed GLBs decode smoothly) -->
+  <!-- 3. Meshopt Decoder CDN -->
   <script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.19.0/meshopt_decoder.js"></script>
 
   <style>
@@ -63,6 +63,42 @@
     .log-warn { color: #ffff00; }
     .log-error { color: #ff3333; }
   </style>
+
+  <script>
+    // Global HUD Logger
+    function logToHUD(msg, type = 'info') {
+      const hud = document.getElementById("debugHUD");
+      if (!hud) return;
+      const line = document.createElement("div");
+      line.className = "log-line " + (type === 'error' ? 'log-error' : type === 'success' ? 'log-success' : type === 'warn' ? 'log-warn' : '');
+      const time = new Date().toISOString().split('T')[1].slice(0, 8);
+      line.textContent = `[${time}] ${msg}`;
+      hud.appendChild(line);
+      hud.scrollTop = hud.scrollHeight;
+    }
+
+    // Catch all uncaught JS errors and print directly to HUD
+    window.addEventListener('error', (e) => {
+      logToHUD(`GLOBAL ERROR: ${e.message} (${e.filename}:${e.lineno})`, 'error');
+    });
+
+    window.addEventListener('unhandledrejection', (e) => {
+      logToHUD(`PROMISE REJECTION: ${e.reason}`, 'error');
+    });
+
+    // Initialize Meshopt WASM module before A-Frame attempts parsing
+    if (window.MeshoptDecoder) {
+      MeshoptDecoder.ready.then(() => {
+        const THREE_REF = window.AFRAME ? window.AFRAME.THREE : window.THREE;
+        if (THREE_REF && THREE_REF.GLTFLoader) {
+          THREE_REF.GLTFLoader.prototype.MeshoptDecoder = MeshoptDecoder;
+          console.log("MeshoptDecoder WASM initialized successfully.");
+        }
+      }).catch((err) => {
+        console.error("Failed to initialize MeshoptDecoder:", err);
+      });
+    }
+  </script>
 </head>
 
 <body>
@@ -102,12 +138,12 @@
 
     <!-- Target 0 Container -->
     <a-entity id="target0" mindar-image-target="targetIndex: 0">
-      <!-- Scale set to 0.005 for 30m Blender model -->
       <a-entity id="wrapper0" position="0 0 0" rotation="0 0 0" scale="0.005 0.005 0.005">
         
-        <!-- Standard <a-entity> with explicit gltf-model component parameters -->
+        <!-- Standard Entity using gltf-model component -->
         <a-entity
           id="model-0"
+          gltf-model="src: #plant1;"
           position="0 0 0"
           rotation="0 0 0">
         </a-entity>
@@ -118,23 +154,6 @@
   </a-scene>
 
 <script>
-// Print logs directly onto HUD overlay
-function logToHUD(msg, type = 'info') {
-  const hud = document.getElementById("debugHUD");
-  if (!hud) return;
-  const line = document.createElement("div");
-  line.className = "log-line " + (type === 'error' ? 'log-error' : type === 'success' ? 'log-success' : type === 'warn' ? 'log-warn' : '');
-  const time = new Date().toISOString().split('T')[1].slice(0, 8);
-  line.textContent = `[${time}] ${msg}`;
-  hud.appendChild(line);
-  hud.scrollTop = hud.scrollHeight;
-}
-
-// Attach MeshoptDecoder globally to Three.js GLTFLoader if loaded
-if (window.MeshoptDecoder && window.THREE) {
-  THREE.GLTFLoader ? (THREE.GLTFLoader.prototype.MeshoptDecoder = MeshoptDecoder) : null;
-}
-
 (() => {
   let isTracking = false;
   let isDragging = false;
@@ -166,10 +185,18 @@ if (window.MeshoptDecoder && window.THREE) {
 
     // 1. Verify model element exists
     if (assetEl) {
-      logToHUD(`Asset DOM node detected: #${assetEl.id}`, 'info');
+      logToHUD(`Asset node detected: #${assetEl.id}`, 'info');
       logToHUD(`Source path: ${assetEl.getAttribute('src')}`, 'info');
     } else {
       logToHUD(`ERROR: #plant1 asset node missing!`, 'error');
+    }
+
+    // Ensure Meshopt is attached to AFRAME.THREE.GLTFLoader
+    if (window.MeshoptDecoder && window.AFRAME) {
+      MeshoptDecoder.ready.then(() => {
+        AFRAME.THREE.GLTFLoader.prototype.MeshoptDecoder = MeshoptDecoder;
+        logToHUD(`Meshopt WebAssembly Decoder Ready!`, 'success');
+      });
     }
 
     // 2. Track download progress frame-by-frame
@@ -210,7 +237,6 @@ if (window.MeshoptDecoder && window.THREE) {
       modelEl.addEventListener("model-loaded", () => {
         logToHUD(`A-FRAME: GLTF Model fully decompressed & rendered!`, 'success');
         
-        // Output real bounding dimensions
         const obj = modelEl.getObject3D('mesh') || modelEl.object3D;
         const box = new THREE.Box3().setFromObject(obj);
         const size = new THREE.Vector3();
