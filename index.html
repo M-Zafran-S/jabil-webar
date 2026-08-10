@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MindAR Project</title>
+
+  <!-- Stable WebAR and Rendering Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    #logoOverlay {
+      position: fixed;
+      left: 9.7vw;
+      top: 3.5vh;
+      height: 6.5vh;
+      width: auto;
+      z-index: 9999;
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Fixed UI Logo -->
+  <img id="logoOverlay" src="./assets/logo.png">
+
+  <a-scene
+    mindar-image="
+      imageTargetSrc: ./assets/tracking-files/targets.mind;
+      filterMinCF: 0.001;
+      filterBeta: 1000;
+    "
+    color-space="sRGB"
+    renderer="
+      colorManagement: true;
+      physicallyCorrectLights: true;
+    "
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false">
+
+    <a-assets>
+      <a-asset-item id="plant1" src="./assets/models/jabil-plant-1.glb"></a-asset-item>
+    </a-assets>
+
+    <a-camera
+      position="0 0 0"
+      look-controls="enabled: false"
+      camera="near: 0.01; far: 10000;">
+    </a-camera>
+
+    <a-entity id="target0" mindar-image-target="targetIndex: 0">
+      <a-gltf-model
+        id="model-0"
+        src="#plant1"
+        rotation="0 0 0"
+        position="0 0 0.1"
+        scale="0.1 0.1 0.1">
+      </a-gltf-model>
+    </a-entity>
+
+  </a-scene>
+
+<script>
+(() => {
+  let isTracking = false;
+  let isDragging = false;
+  let previousTouchX = 0;
+
+  let initialPinchDistance = 0;
+  let initialScale = 0.1;
+
+  // Rotation speed converted for direct Three.js radian calculation
+  const rotationSpeed = 0.005; 
+  const scaleSpeed = 0.001;
+  const scaleMin = 0.01;
+  const scaleMax = 2.0;
+
+  let model = null;
+  let target = null;
+
+  function getPinchDistance(touch1, touch2) {
+    const dx = touch1.clientX - touch2.clientX;
+    const dy = touch1.clientY - touch2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  window.addEventListener("load", () => {
+    model = document.getElementById("model-0");
+    target = document.getElementById("target0");
+
+    if (target) {
+      target.addEventListener("targetFound", () => {
+        isTracking = true;
+      });
+
+      target.addEventListener("targetLost", () => {
+        isTracking = false;
+        isDragging = false;
+      });
+    }
+  });
+
+  window.addEventListener("touchstart", (e) => {
+    if (!isTracking || !model) return;
+
+    if (e.touches.length === 1) {
+      isDragging = true;
+      previousTouchX = e.touches[0].clientX;
+    } else if (e.touches.length === 2) {
+      isDragging = false; // Freeze rotation during pinch
+      initialPinchDistance = getPinchDistance(e.touches[0], e.touches[1]);
+      initialScale = model.object3D.scale.x;
+    }
+  });
+
+  window.addEventListener("touchmove", (e) => {
+    if (!isTracking || !model) return;
+    e.preventDefault();
+
+    // 1-Finger Horizontal Rotation
+    if (e.touches.length === 1 && isDragging) {
+      const currentTouchX = e.touches[0].clientX;
+      const deltaX = currentTouchX - previousTouchX;
+      previousTouchX = currentTouchX;
+
+      // Direct Three.js rotation for 60fps performance
+      model.object3D.rotation.y += deltaX * rotationSpeed;
+    }
+    // 2-Finger Pinch Scaling
+    else if (e.touches.length === 2) {
+      const currentPinchDistance = getPinchDistance(e.touches[0], e.touches[1]);
+      const deltaDistance = currentPinchDistance - initialPinchDistance;
+
+      let newScale = initialScale + (deltaDistance * scaleSpeed);
+      newScale = Math.max(scaleMin, Math.min(newScale, scaleMax));
+
+      // Direct Three.js scale modification
+      model.object3D.scale.set(newScale, newScale, newScale);
+    }
+  }, { passive: false });
+
+  window.addEventListener("touchend", (e) => {
+    if (!isTracking) return;
+
+    if (e.touches.length === 0) {
+      isDragging = false;
+    } else if (e.touches.length === 1) {
+      isDragging = true;
+      previousTouchX = e.touches[0].clientX;
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
