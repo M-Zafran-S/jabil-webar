@@ -6,7 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Jabil WebAR</title>
 
+  <!-- 1. A-Frame Library -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  
+  <!-- 2. MindAR Libraries -->
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
@@ -23,9 +26,38 @@
       top: 3.5vh;
       height: 6.5vh;
       width: auto;
-      z-index: 9999;
+      z-index: 9998;
       pointer-events: none;
     }
+
+    /* ON-SCREEN DEBUG LOG PANEL */
+    #debugHUD {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      max-height: 220px;
+      background: rgba(0, 0, 0, 0.85);
+      color: #00ffcc;
+      font-family: monospace;
+      font-size: 11px;
+      padding: 12px;
+      border-radius: 8px;
+      z-index: 9999;
+      overflow-y: auto;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      border: 1px solid #00ffcc;
+      pointer-events: none;
+    }
+
+    .log-line {
+      margin-bottom: 3px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .log-success { color: #00ff00; }
+    .log-warn { color: #ffff00; }
+    .log-error { color: #ff3333; }
   </style>
 </head>
 
@@ -33,6 +65,11 @@
 
   <!-- Fixed UI Logo -->
   <img id="logoOverlay" src="./assets/logo.png">
+
+  <!-- On-Screen Debug Log Screen -->
+  <div id="debugHUD">
+    <div class="log-line log-warn">[SYSTEM INITIALIZING...]</div>
+  </div>
 
   <a-scene
     mindar-image="
@@ -45,9 +82,12 @@
     vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false">
 
-    <a-assets>
+    <a-assets id="assets-container">
       <a-asset-item id="plant1" src="./assets/models/jabil-plant-1.glb"></a-asset-item>
     </a-assets>
+
+    <a-light type="ambient" intensity="1.5"></a-light>
+    <a-light type="directional" position="1 2 3" intensity="1.5"></a-light>
 
     <a-camera
       position="0 0 0"
@@ -65,27 +105,39 @@
           rotation="0 0 0">
         </a-gltf-model>
       </a-entity>
-
     </a-entity>
 
   </a-scene>
 
 <script>
+// Logger function to print directly onto screen HUD
+function logToHUD(msg, type = 'info') {
+  const hud = document.getElementById("debugHUD");
+  if (!hud) return;
+  const line = document.createElement("div");
+  line.className = "log-line " + (type === 'error' ? 'log-error' : type === 'success' ? 'log-success' : type === 'warn' ? 'log-warn' : '');
+  const time = new Date().toISOString().split('T')[1].slice(0, 8);
+  line.textContent = `[${time}] ${msg}`;
+  hud.appendChild(line);
+  hud.scrollTop = hud.scrollHeight;
+}
+
 (() => {
   let isTracking = false;
   let isDragging = false;
   let previousTouchX = 0;
 
   let initialPinchDistance = 0;
-  let initialScale = 1.0;
+  let initialScale = 0.005;
 
   const rotationSpeed = 0.005; 
-  const scaleSpeed = 0.005;
-  const scaleMin = 0.1;
-  const scaleMax = 5.0;
+  const scaleSpeed = 0.0005;
+  const scaleMin = 0.0001;
+  const scaleMax = 0.1;
 
   let wrapper = null;
   let target = null;
+  let modelEl = null;
 
   function getPinchDistance(touch1, touch2) {
     const dx = touch1.clientX - touch2.clientX;
@@ -96,19 +148,83 @@
   document.addEventListener("DOMContentLoaded", () => {
     wrapper = document.getElementById("wrapper0");
     target = document.getElementById("target0");
+    modelEl = document.getElementById("model-0");
+    const assetEl = document.getElementById("plant1");
 
+    // 1. Check if model DOM element exists
+    if (assetEl) {
+      logToHUD(`Asset DOM node detected: #${assetEl.id}`, 'info');
+      logToHUD(`Target URL: ${assetEl.getAttribute('src')}`, 'info');
+    } else {
+      logToHUD(`ERROR: #plant1 asset node missing!`, 'error');
+    }
+
+    // 2. XMLHttpRequest to monitor frame-by-frame download progress
+    if (assetEl) {
+      const modelUrl = assetEl.getAttribute('src');
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', modelUrl, true);
+      xhr.responseType = 'arraybuffer';
+
+      xhr.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          const loadedMB = (event.loaded / (1024 * 1024)).toFixed(2);
+          const totalMB = (event.total / (1024 * 1024)).toFixed(2);
+          logToHUD(`Downloading GLB: ${percent}% (${loadedMB} MB / ${totalMB} MB)`, 'warn');
+        } else {
+          logToHUD(`Downloading GLB: ${(event.loaded / (1024 * 1024)).toFixed(2)} MB loaded...`, 'warn');
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          logToHUD(`GLB File successfully retrieved (HTTP 200)!`, 'success');
+        } else {
+          logToHUD(`HTTP Error ${xhr.status}: Could not find file at ${modelUrl}`, 'error');
+        }
+      };
+
+      xhr.onerror = () => {
+        logToHUD(`Network Error: Failed to fetch ${modelUrl}`, 'error');
+      };
+
+      xhr.send();
+    }
+
+    // 3. Monitor A-Frame GLTF parsing status
+    if (modelEl) {
+      modelEl.addEventListener("model-loaded", (e) => {
+        logToHUD(`A-FRAME: GLTF Model fully parsed & rendered!`, 'success');
+        
+        // Calculate Bounding Box dimensions in meters
+        const box = new THREE.Box3().setFromObject(modelEl.object3D);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        logToHUD(`Model Dimensions: W:${size.x.toFixed(2)}m H:${size.y.toFixed(2)}m D:${size.z.toFixed(2)}m`, 'info');
+      });
+
+      modelEl.addEventListener("model-error", (e) => {
+        logToHUD(`A-FRAME ERROR: GLTF failed to parse! Detail: ${JSON.stringify(e.detail)}`, 'error');
+      });
+    }
+
+    // 4. Monitor MindAR tracking status
     if (target) {
       target.addEventListener("targetFound", () => {
+        logToHUD(`TRACKING: Image Target Found!`, 'success');
         isTracking = true;
       });
 
       target.addEventListener("targetLost", () => {
+        logToHUD(`TRACKING: Target Lost!`, 'warn');
         isTracking = false;
         isDragging = false;
       });
     }
   });
 
+  // Touch controls
   window.addEventListener("touchstart", (e) => {
     if (!isTracking || !wrapper) return;
 
@@ -126,16 +242,13 @@
     if (!isTracking || !wrapper) return;
     e.preventDefault();
 
-    // 1-Finger Horizontal Rotation
     if (e.touches.length === 1 && isDragging) {
       const currentTouchX = e.touches[0].clientX;
       const deltaX = currentTouchX - previousTouchX;
       previousTouchX = currentTouchX;
 
       wrapper.object3D.rotation.y += deltaX * rotationSpeed;
-    }
-    // 2-Finger Pinch Scaling
-    else if (e.touches.length === 2) {
+    } else if (e.touches.length === 2) {
       const currentPinchDistance = getPinchDistance(e.touches[0], e.touches[1]);
       const deltaDistance = currentPinchDistance - initialPinchDistance;
 
