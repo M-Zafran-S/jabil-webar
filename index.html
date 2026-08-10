@@ -6,12 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Jabil WebAR</title>
 
-  <!-- 1. A-Frame Library -->
+  <!-- 1. A-Frame Core Library -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   
   <!-- 2. MindAR Libraries -->
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <!-- 3. Meshopt Decoder CDN (Ensures Meshopt-compressed GLBs decode smoothly) -->
+  <script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.19.0/meshopt_decoder.js"></script>
 
   <style>
     body {
@@ -72,9 +75,7 @@
     <div class="log-line log-warn">[SYSTEM INITIALIZING...]</div>
   </div>
 
-  <!-- Scene with Draco Decoder Path included at root level -->
   <a-scene
-    gltf-model="dracoDecoderPath: https://www.gstatic.com/draco/v1/decoders/;"
     mindar-image="
       imageTargetSrc: ./assets/tracking-files/targets.mind;
       filterMinCF: 0.001;
@@ -101,21 +102,24 @@
 
     <!-- Target 0 Container -->
     <a-entity id="target0" mindar-image-target="targetIndex: 0">
-      <!-- Wrapper scaled down for ~30m Blender dimensions -->
+      <!-- Scale set to 0.005 for 30m Blender model -->
       <a-entity id="wrapper0" position="0 0 0" rotation="0 0 0" scale="0.005 0.005 0.005">
-        <a-gltf-model
+        
+        <!-- Standard <a-entity> with explicit gltf-model component parameters -->
+        <a-entity
           id="model-0"
-          src="#plant1"
+          gltf-model="src: #plant1; dracoDecoderPath: https://www.gstatic.com/draco/versioned/decoders/1.5.7/;"
           position="0 0 0"
           rotation="0 0 0">
-        </a-gltf-model>
+        </a-entity>
+
       </a-entity>
     </a-entity>
 
   </a-scene>
 
 <script>
-// Print logs directly onto the HUD overlay
+// Print logs directly onto HUD overlay
 function logToHUD(msg, type = 'info') {
   const hud = document.getElementById("debugHUD");
   if (!hud) return;
@@ -125,6 +129,11 @@ function logToHUD(msg, type = 'info') {
   line.textContent = `[${time}] ${msg}`;
   hud.appendChild(line);
   hud.scrollTop = hud.scrollHeight;
+}
+
+// Attach MeshoptDecoder globally to Three.js GLTFLoader if loaded
+if (window.MeshoptDecoder && window.THREE) {
+  THREE.GLTFLoader ? (THREE.GLTFLoader.prototype.MeshoptDecoder = MeshoptDecoder) : null;
 }
 
 (() => {
@@ -156,15 +165,15 @@ function logToHUD(msg, type = 'info') {
     modelEl = document.getElementById("model-0");
     const assetEl = document.getElementById("plant1");
 
-    // 1. Verify model DOM element exists
+    // 1. Verify model element exists
     if (assetEl) {
-      logToHUD(`Asset node initialized: #${assetEl.id}`, 'info');
+      logToHUD(`Asset DOM node detected: #${assetEl.id}`, 'info');
       logToHUD(`Source path: ${assetEl.getAttribute('src')}`, 'info');
     } else {
-      logToHUD(`ERROR: #plant1 asset element not found in DOM!`, 'error');
+      logToHUD(`ERROR: #plant1 asset node missing!`, 'error');
     }
 
-    // 2. Track download progress frame-by-frame via XHR
+    // 2. Track download progress frame-by-frame
     if (assetEl) {
       const modelUrl = assetEl.getAttribute('src');
       const xhr = new XMLHttpRequest();
@@ -184,40 +193,42 @@ function logToHUD(msg, type = 'info') {
 
       xhr.onload = () => {
         if (xhr.status === 200) {
-          logToHUD(`GLB File successfully retrieved (HTTP 200)`, 'success');
+          logToHUD(`GLB File retrieved (HTTP 200)`, 'success');
         } else {
-          logToHUD(`HTTP ${xhr.status}: Failed to retrieve file at ${modelUrl}`, 'error');
+          logToHUD(`HTTP Error ${xhr.status}: File not found at ${modelUrl}`, 'error');
         }
       };
 
       xhr.onerror = () => {
-        logToHUD(`Network Error: Could not reach ${modelUrl}`, 'error');
+        logToHUD(`Network Error: Failed to fetch ${modelUrl}`, 'error');
       };
 
       xhr.send();
     }
 
-    // 3. Monitor A-Frame parsing events
+    // 3. Monitor A-Frame GLTF parsing status
     if (modelEl) {
       modelEl.addEventListener("model-loaded", () => {
-        logToHUD(`A-FRAME: GLTF Model fully decompressed & parsed!`, 'success');
+        logToHUD(`A-FRAME: GLTF Model fully decompressed & rendered!`, 'success');
         
-        // Output real dimensions in meters
-        const box = new THREE.Box3().setFromObject(modelEl.object3D);
+        // Output real bounding dimensions
+        const obj = modelEl.getObject3D('mesh') || modelEl.object3D;
+        const box = new THREE.Box3().setFromObject(obj);
         const size = new THREE.Vector3();
         box.getSize(size);
-        logToHUD(`Model Dimensions: ${size.x.toFixed(1)}m x ${size.y.toFixed(1)}m x ${size.z.toFixed(1)}m`, 'info');
+        logToHUD(`Model Bounding Box: ${size.x.toFixed(1)}m x ${size.y.toFixed(1)}m x ${size.z.toFixed(1)}m`, 'info');
       });
 
       modelEl.addEventListener("model-error", (e) => {
-        logToHUD(`A-FRAME ERROR: Parse failure. Check Draco path or file encoding.`, 'error');
+        const errorDetail = e.detail && e.detail.error ? e.detail.error : JSON.stringify(e.detail);
+        logToHUD(`A-FRAME ERROR: ${errorDetail}`, 'error');
       });
     }
 
-    // 4. Track image target status
+    // 4. Monitor MindAR tracking status
     if (target) {
       target.addEventListener("targetFound", () => {
-        logToHUD(`TRACKING: Image Target Recognized!`, 'success');
+        logToHUD(`TRACKING: Image Target Found!`, 'success');
         isTracking = true;
       });
 
