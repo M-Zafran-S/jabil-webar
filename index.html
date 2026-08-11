@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Jabil WebAR</title>
 
+    <!-- Load A-Frame first, then ONLY the A-Frame version of MindAR -->
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
     <style>
@@ -28,7 +28,7 @@
       device-orientation-permission-ui="enabled: false">
 
       <a-assets id="ar-assets">
-        <a-asset-item id="modelAsset" src="assets/models/jp1.glb" crossorigin="anonymous"></a-asset-item>
+        <a-asset-item id="modelAsset" src="./assets/models/jp1.glb"></a-asset-item>
       </a-assets>
 
       <a-light type="ambient" intensity="1.5"></a-light>
@@ -43,7 +43,6 @@
     </a-scene>
 
     <script>
-      // --- AR & MODEL VARIABLES ---
       let isDragging = false;
       let previousTouchX = 0;
       let initialPinchDistance = 0;
@@ -56,7 +55,7 @@
       const targetEl = document.getElementById('target-entity');
       const model = document.getElementById('ar-model');
 
-      // --- TARGET LISTENERS ---
+      // Reset model when tracking target is lost
       if (targetEl) {
         targetEl.addEventListener('targetLost', () => {
           isDragging = false;
@@ -67,7 +66,7 @@
         });
       }
 
-      // --- TOUCH HANDLERS ---
+      // Touch handlers for rotation & scale
       function getPinchDistance(touch1, touch2) {
         return Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
       }
@@ -89,7 +88,6 @@
       function handleTouchMove(e) {
         if (!model) return;
 
-        // CASE 1: Single-finger swipe (Rotate Y-axis)
         if (e.touches.length === 1 && isDragging) {
           const currentTouchX = e.touches[0].clientX;
           const deltaX = currentTouchX - previousTouchX;
@@ -98,9 +96,7 @@
           let rotation = model.getAttribute('rotation');
           rotation.y += deltaX * rotationSpeed;
           model.setAttribute('rotation', rotation);
-        } 
-        // CASE 2: Two-finger pinch (Scale up/down)
-        else if (e.touches.length === 2) {
+        } else if (e.touches.length === 2) {
           const currentPinchDistance = getPinchDistance(e.touches[0], e.touches[1]);
           const deltaDistance = currentPinchDistance - initialPinchDistance;
 
@@ -124,7 +120,7 @@
       window.addEventListener('touchmove', handleTouchMove, { passive: false });
       window.addEventListener('touchend', handleTouchEnd);
 
-      // --- CLEANUP ---
+      // Session cleanup
       function cleanupAR() {
         window.removeEventListener('touchstart', handleTouchStart);
         window.removeEventListener('touchmove', handleTouchMove);
