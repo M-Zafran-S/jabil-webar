@@ -6,6 +6,7 @@
     <title>Jabil WebAR</title>
 
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
     <style>
@@ -14,15 +15,63 @@
         overflow: hidden;
         touch-action: none;
       }
+
+      /* ON-SCREEN DEBUG CONSOLE STYLES */
+      #debug-console {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        max-height: 140px;
+        background: rgba(0, 0, 0, 0.75);
+        color: #50fa7b;
+        font-family: monospace;
+        font-size: 11px;
+        padding: 8px;
+        border-radius: 6px;
+        overflow-y: auto;
+        z-index: 99999;
+        pointer-events: auto;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      }
+
+      #debug-console div {
+        margin-bottom: 3px;
+        word-break: break-all;
+      }
+
+      .log-error { color: #ff5555 !important; }
+      .log-warn { color: #ffb86c !important; }
+      .log-info { color: #50fa7b !important; }
+
+      #clear-console-btn {
+        position: fixed;
+        top: 155px;
+        right: 10px;
+        z-index: 99999;
+        background: rgba(0, 0, 0, 0.7);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 10px;
+        font-family: monospace;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
+
+    <!-- On-screen console overlay & clear button -->
+    <div id="debug-console"></div>
+    <button id="clear-console-btn" onclick="document.getElementById('debug-console').innerHTML=''">Clear Console</button>
 
     <a-scene 
       id="ar-scene"
       mindar-image="imageTargetSrc: ./assets/tracking-files/targets.mind; filterMinCF: 0.001; filterBeta: 1000;" 
       color-space="sRGB" 
-      renderer="colorManagement: true, physicallyCorrectLights" 
+      renderer="colorManagement: true, physicallyCorrectLights: true" 
       vr-mode-ui="enabled: false" 
       device-orientation-permission-ui="enabled: false">
 
@@ -30,15 +79,59 @@
         <a-asset-item id="modelAsset" src="./assets/models/jp1.glb"></a-asset-item>
       </a-assets>
 
+      <a-light type="ambient" intensity="1.5"></a-light>
+      <a-light type="directional" position="1 2 1" intensity="1.5"></a-light>
+
       <a-camera position="0 0 0" look-controls="enabled: false" camera="near: 0.01; far: 10000;"></a-camera>
 
       <a-entity id="target-entity" mindar-image-target="targetIndex: 0">
-        <a-gltf-model id="ar-model" src="#modelAsset" rotation="0 0 0" position="0 0 0.1" scale="1 1 1"></a-gltf-model>
+        <a-gltf-model id="ar-model" src="#modelAsset" rotation="0 0 0" position="0 0 0" scale="1 1 1"></a-gltf-model>
       </a-entity>
 
     </a-scene>
 
     <script>
+      // --- ON-SCREEN CONSOLE INTERCEPTOR ---
+      const consoleBox = document.getElementById('debug-console');
+
+      function printToUI(msg, type = 'info') {
+        if (!consoleBox) return;
+        const line = document.createElement('div');
+        line.className = `log-${type}`;
+        const time = new Date().toLocaleTimeString().split(' ')[0];
+        line.textContent = `[${time}] ${msg}`;
+        consoleBox.appendChild(line);
+        consoleBox.scrollTop = consoleBox.scrollHeight;
+      }
+
+      // Override default console logs
+      const origLog = console.log;
+      const origError = console.error;
+      const origWarn = console.warn;
+
+      console.log = (...args) => {
+        origLog.apply(console, args);
+        printToUI(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), 'info');
+      };
+
+      console.error = (...args) => {
+        origError.apply(console, args);
+        printToUI(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), 'error');
+      };
+
+      console.warn = (...args) => {
+        origWarn.apply(console, args);
+        printToUI(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), 'warn');
+      };
+
+      // Catch global uncaught script errors
+      window.addEventListener('error', (e) => {
+        printToUI(`Uncaught Error: ${e.message}`, 'error');
+      });
+
+      console.log('UI Console initialized.');
+
+      // --- AR & MODEL VARIABLES ---
       let isDragging = false;
       let previousTouchX = 0;
       let initialPinchDistance = 0;
@@ -51,11 +144,34 @@
       const targetEl = document.getElementById('target-entity');
       const model = document.getElementById('ar-model');
 
-      // --- TOUCH GESTURE HANDLERS ---
+      // --- DEBUGGING LISTENERS ---
+      if (model) {
+        model.addEventListener('model-loaded', () => {
+          console.log('jp1.glb loaded successfully!');
+        });
+
+        model.addEventListener('model-error', (e) => {
+          console.error('Failed to load jp1.glb. Check file path or CORS headers.');
+        });
+      }
+
+      if (targetEl) {
+        targetEl.addEventListener('targetFound', () => {
+          console.log('Target image detected!');
+        });
+        targetEl.addEventListener('targetLost', () => {
+          console.warn('Target image lost.');
+          isDragging = false;
+          if (model) {
+            model.setAttribute('rotation', '0 0 0');
+            model.setAttribute('scale', '1 1 1');
+          }
+        });
+      }
+
+      // --- TOUCH HANDLERS ---
       function getPinchDistance(touch1, touch2) {
-        const dx = touch1.clientX - touch2.clientX;
-        const dy = touch1.clientY - touch2.clientY;
-        return Math.hypot(dx, dy);
+        return Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
       }
 
       function handleTouchStart(e) {
@@ -75,7 +191,6 @@
       function handleTouchMove(e) {
         if (!model) return;
 
-        // CASE 1: Single-finger horizontal swipe (Rotate)
         if (e.touches.length === 1 && isDragging) {
           const currentTouchX = e.touches[0].clientX;
           const deltaX = currentTouchX - previousTouchX;
@@ -84,14 +199,12 @@
           let rotation = model.getAttribute('rotation');
           rotation.y += deltaX * rotationSpeed;
           model.setAttribute('rotation', rotation);
-        } 
-        // CASE 2: Two-finger pinch (Scale)
-        else if (e.touches.length === 2) {
+        } else if (e.touches.length === 2) {
           const currentPinchDistance = getPinchDistance(e.touches[0], e.touches[1]);
           const deltaDistance = currentPinchDistance - initialPinchDistance;
 
           let newScale = initialScale + (deltaDistance * scaleSpeed);
-          newScale = Math.max(0.1, Math.min(newScale, 5.0));
+          newScale = Math.max(0.01, Math.min(newScale, 10.0));
 
           model.setAttribute('scale', `${newScale} ${newScale} ${newScale}`);
         }
@@ -106,44 +219,25 @@
         }
       }
 
-      // Attach touch listeners
       window.addEventListener('touchstart', handleTouchStart);
       window.addEventListener('touchmove', handleTouchMove, { passive: false });
       window.addEventListener('touchend', handleTouchEnd);
 
-      // --- CLEANUP & TARGET LOGIC ---
-
-      // 1. Reset scale and rotation whenever the target is lost
-      if (targetEl) {
-        targetEl.addEventListener('targetLost', () => {
-          isDragging = false;
-          if (model) {
-            model.setAttribute('rotation', '0 0 0');
-            model.setAttribute('scale', '1 1 1');
-          }
-        });
-      }
-
-      // 2. Comprehensive memory and session cleanup function
+      // --- CLEANUP ---
       function cleanupAR() {
-        // Remove global event listeners
         window.removeEventListener('touchstart', handleTouchStart);
         window.removeEventListener('touchmove', handleTouchMove);
         window.removeEventListener('touchend', handleTouchEnd);
 
-        // Stop camera feed and WebGL context via MindAR system
         if (sceneEl) {
           const mindarSystem = sceneEl.systems['mindar-image-system'];
           if (mindarSystem) {
             mindarSystem.stop();
           }
 
-          // Traverse Three.js scene graph to dispose geometries, textures, and materials from GPU memory
           if (sceneEl.object3D) {
             sceneEl.object3D.traverse((object) => {
-              if (object.geometry) {
-                object.geometry.dispose();
-              }
+              if (object.geometry) object.geometry.dispose();
               if (object.material) {
                 if (Array.isArray(object.material)) {
                   object.material.forEach((mat) => disposeMaterial(mat));
@@ -156,7 +250,6 @@
         }
       }
 
-      // Helper to dispose material maps and textures
       function disposeMaterial(material) {
         Object.keys(material).forEach((prop) => {
           if (material[prop] && typeof material[prop].dispose === 'function') {
@@ -166,7 +259,6 @@
         material.dispose();
       }
 
-      // Automatically trigger cleanup on page unload / navigation
       window.addEventListener('beforeunload', cleanupAR);
       window.addEventListener('pagehide', cleanupAR);
     </script>
