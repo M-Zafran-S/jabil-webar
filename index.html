@@ -19,19 +19,20 @@
   <body>
 
     <a-scene 
+      id="ar-scene"
       mindar-image="imageTargetSrc: ./assets/tracking-files/targets.mind; filterMinCF: 0.001; filterBeta: 1000;" 
       color-space="sRGB" 
       renderer="colorManagement: true, physicallyCorrectLights" 
       vr-mode-ui="enabled: false" 
       device-orientation-permission-ui="enabled: false">
 
-      <a-assets>
+      <a-assets id="ar-assets">
         <a-asset-item id="modelAsset" src="./assets/models/jp1.glb"></a-asset-item>
       </a-assets>
 
       <a-camera position="0 0 0" look-controls="enabled: false" camera="near: 0.01; far: 10000;"></a-camera>
 
-      <a-entity mindar-image-target="targetIndex: 0">
+      <a-entity id="target-entity" mindar-image-target="targetIndex: 0">
         <a-gltf-model id="ar-model" src="#modelAsset" rotation="0 0 0" position="0 0 0.1" scale="1 1 1"></a-gltf-model>
       </a-entity>
 
@@ -46,15 +47,18 @@
       const rotationSpeed = 0.5;
       const scaleSpeed = 0.005;
 
+      const sceneEl = document.getElementById('ar-scene');
+      const targetEl = document.getElementById('target-entity');
       const model = document.getElementById('ar-model');
 
+      // --- TOUCH GESTURE HANDLERS ---
       function getPinchDistance(touch1, touch2) {
         const dx = touch1.clientX - touch2.clientX;
         const dy = touch1.clientY - touch2.clientY;
         return Math.hypot(dx, dy);
       }
 
-      window.addEventListener('touchstart', (e) => {
+      function handleTouchStart(e) {
         if (e.touches.length === 1) {
           isDragging = true;
           previousTouchX = e.touches[0].clientX;
@@ -66,12 +70,12 @@
             initialScale = currentScale.x;
           }
         }
-      });
+      }
 
-      window.addEventListener('touchmove', (e) => {
+      function handleTouchMove(e) {
         if (!model) return;
 
-        // CASE 1: Single-finger swipe (Rotate on Y-axis)
+        // CASE 1: Single-finger horizontal swipe (Rotate)
         if (e.touches.length === 1 && isDragging) {
           const currentTouchX = e.touches[0].clientX;
           const deltaX = currentTouchX - previousTouchX;
@@ -81,7 +85,7 @@
           rotation.y += deltaX * rotationSpeed;
           model.setAttribute('rotation', rotation);
         } 
-        // CASE 2: Two-finger pinch (Scale up/down)
+        // CASE 2: Two-finger pinch (Scale)
         else if (e.touches.length === 2) {
           const currentPinchDistance = getPinchDistance(e.touches[0], e.touches[1]);
           const deltaDistance = currentPinchDistance - initialPinchDistance;
@@ -91,16 +95,80 @@
 
           model.setAttribute('scale', `${newScale} ${newScale} ${newScale}`);
         }
-      }, { passive: false });
+      }
 
-      window.addEventListener('touchend', (e) => {
+      function handleTouchEnd(e) {
         if (e.touches.length === 0) {
           isDragging = false;
         } else if (e.touches.length === 1) {
           isDragging = true;
           previousTouchX = e.touches[0].clientX;
         }
-      });
+      }
+
+      // Attach touch listeners
+      window.addEventListener('touchstart', handleTouchStart);
+      window.addEventListener('touchmove', handleTouchMove, { passive: false });
+      window.addEventListener('touchend', handleTouchEnd);
+
+      // --- CLEANUP & TARGET LOGIC ---
+
+      // 1. Reset scale and rotation whenever the target is lost
+      if (targetEl) {
+        targetEl.addEventListener('targetLost', () => {
+          isDragging = false;
+          if (model) {
+            model.setAttribute('rotation', '0 0 0');
+            model.setAttribute('scale', '1 1 1');
+          }
+        });
+      }
+
+      // 2. Comprehensive memory and session cleanup function
+      function cleanupAR() {
+        // Remove global event listeners
+        window.removeEventListener('touchstart', handleTouchStart);
+        window.removeEventListener('touchmove', handleTouchMove);
+        window.removeEventListener('touchend', handleTouchEnd);
+
+        // Stop camera feed and WebGL context via MindAR system
+        if (sceneEl) {
+          const mindarSystem = sceneEl.systems['mindar-image-system'];
+          if (mindarSystem) {
+            mindarSystem.stop();
+          }
+
+          // Traverse Three.js scene graph to dispose geometries, textures, and materials from GPU memory
+          if (sceneEl.object3D) {
+            sceneEl.object3D.traverse((object) => {
+              if (object.geometry) {
+                object.geometry.dispose();
+              }
+              if (object.material) {
+                if (Array.isArray(object.material)) {
+                  object.material.forEach((mat) => disposeMaterial(mat));
+                } else {
+                  disposeMaterial(object.material);
+                }
+              }
+            });
+          }
+        }
+      }
+
+      // Helper to dispose material maps and textures
+      function disposeMaterial(material) {
+        Object.keys(material).forEach((prop) => {
+          if (material[prop] && typeof material[prop].dispose === 'function') {
+            material[prop].dispose();
+          }
+        });
+        material.dispose();
+      }
+
+      // Automatically trigger cleanup on page unload / navigation
+      window.addEventListener('beforeunload', cleanupAR);
+      window.addEventListener('pagehide', cleanupAR);
     </script>
   </body>
 </html>
