@@ -43,7 +43,7 @@
       const rotationSpeed = 0.5;
       const scaleSpeed = 0.005; // Tweak this value to make pinching zoom faster/slower
 
-      // Helper helper function to calculate pixel distance between two fingers
+      // Helper function to calculate pixel distance between two fingers
       function getPinchDistance(touch1, touch2) {
         const dx = touch1.clientX - touch2.clientX;
         const dy = touch1.clientY - touch2.clientY;
@@ -70,7 +70,7 @@
       });
 
       window.addEventListener('touchmove', (e) => {
-        // CASE 1: Single-finger swipe (Rotate exclusively on Y-axis)
+        // CASE 1: Single-finger swipe (Rotate exclusively on Z-axis)
         if (e.touches.length === 1 && isDragging) {
           const currentTouchX = e.touches[0].clientX;
           const deltaX = currentTouchX - previousTouchX;
@@ -80,7 +80,7 @@
             const model = document.getElementById(`model-${i}`);
             if (model) {
               let rotation = model.getAttribute('rotation');
-              rotation.y += deltaX * rotationSpeed;
+              rotation.z += deltaX * rotationSpeed;
               model.setAttribute('rotation', rotation);
             }
           }
