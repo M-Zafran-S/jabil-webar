@@ -80,7 +80,7 @@
             const model = document.getElementById(`model-${i}`);
             if (model) {
               let rotation = model.getAttribute('rotation');
-              rotation.x += deltaX * rotationSpeed;
+              rotation.y += deltaX * rotationSpeed;
               model.setAttribute('rotation', rotation);
             }
           }
